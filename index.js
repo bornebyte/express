@@ -75,7 +75,7 @@ const run = async () => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                filename
+                selfie: filename
             })
         })
         const data = await res.json();
@@ -84,19 +84,20 @@ const run = async () => {
     run()
 }
 
-let flag = false;
+let flag = true;
 
 app.post('/create', (req, res) => {
     const base64Data = req.body.img.replace(/^data:image\/jpeg;base64,/, "");
     let filename = Date.now().toString(36) + ".jpeg"
-    fs.mkdirSync(path.join(__dirname, "images"), { recursive: true })
+    // fs.mkdirSync(path.join(__dirname, "images"), { recursive: true })
     let imgpath = path.join(__dirname, "images", filename)
-    fs.writeFileSync(imgpath, base64Data, 'base64');
-    queue.enqueue(filename);
-    flag = true
-    if (flag === false) {
+    // fs.writeFileSync(imgpath, base64Data, 'base64');
+    queue.enqueue(base64Data);
+    // if (flag) {
+        // flag = false;
         run();
-    }
+    // }
+    console.log(`[CREATE] Filename - ${imgpath}`)
     res.status(201).send({ message: "Image data added to the queue.", filename, length: queue.size() });
 });
 
