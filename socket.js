@@ -1,20 +1,23 @@
-const os = require('os');
-const fs = require('fs');
-const path = require('path');
 const express = require('express');
-const bodyParser = require('body-parser');
+const http = require('http');
+const { Server } = require('socket.io');
 const cors = require('cors');
-const { Server } = require('socket.io')
-const http = require('http')
+const os = require('os')
 
 const app = express();
-const server = http.createServer(app)
-const port = 3000
-const io = new Server(server, {
-    cors: { origin: '*' }
-})
+app.use(cors()); // Enable CORS for all routes
 
-app.use(cors());
+const server = http.createServer(app);
+
+// Configure Socket.IO with CORS settings
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Allow all origins. For production, restrict this to your frontend's URL.
+        methods: ["GET", "POST"]
+    }
+});
+
+const PORT = process.env.PORT || 3000;
 
 let pause = false;
 let running = false;
@@ -61,22 +64,6 @@ class Queue {
     }
 }
 
-// Increase the limit to handle larger payloads like base64 images
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-
-io.on('connection',(socket)=>{
-    console.log("[SOCKET] Socket Connected with id ", socket.id)
-})
-
-io.on('disconnect',()=>{
-    io.emit('message',"Disconnected user with socket id ",socket.id)
-})
-
-app.get('/', (req, res) => {
-    res.send('Hello From Image Recognition Service!');
-});
-
 const queue = new Queue();
 
 const run = () => {
@@ -96,7 +83,8 @@ const run = () => {
             })
         }).then((res) => {
             res.json().then(data => {
-                console.log(data)
+                io.emit('search-progress', { progress: queue.size() })
+                io.emit('search-complete', data)
                 running = false;
                 run()
             })
@@ -104,25 +92,29 @@ const run = () => {
     }
 }
 
-app.post('/create', (req, res) => {
-    console.log("[Username]", req.body.username)
-    let filename = Date.now().toString(36) + ".jpeg"
-    let imgpath = path.join(__dirname, "images", filename)
-    queue.enqueue({ img: req.body.img, username: req.body.username });
-    run();
-    console.log(`[CREATE] Filename - ${imgpath}`)
-    res.status(201).send({ message: "Image data added to the queue.", filename, length: queue.size() });
+// --- Express Routes (Optional) ---
+app.get('/', (req, res) => {
+    res.send('Socket.IO server is running.');
 });
 
-app.get("/get", (req, res) => {
-    res.send(queue.peek());
-})
+// --- Socket.IO Logic ---
+io.on('connection', (socket) => {
+    console.log(`A user connected: ${socket.id}`);
 
-app.delete("/delete", (req, res) => {
-    res.send(queue.dequeue());
-})
+    socket.on('face-search', (data) => {
+        const { username, img } = data;
+        queue.enqueue({ img, username });
+        console.log(`Starting face search for user: ${username}`);
+        run();
+    });
 
-app.listen(port, () => {
+    socket.on('disconnect', () => {
+        console.log(`User disconnected: ${socket.id}`);
+    });
+});
+
+// --- Start Server ---
+server.listen(PORT, () => {
     const networkInterfaces = os.networkInterfaces();
     let localIps = [];
 
@@ -137,9 +129,9 @@ app.listen(port, () => {
     }
 
     if (localIps.length > 0) {
-        console.log(`Local IP addresses: ${localIps.join(', ')}:${port}`);
+        console.log(`Local IP addresses: ${localIps.join(', ')}:${PORT}`);
     } else {
         console.log('No local IPv4 address found.');
     }
-    console.log(`Example app listening on port ${port}`);
+    console.log(`Example app listening on port ${PORT}`);
 });
