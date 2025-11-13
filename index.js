@@ -68,17 +68,17 @@ const run = async () => {
         return;
     }
     if (!queue.pause) {
-        const filename = queue.dequeue();
+        const item = queue.dequeue();
         const res = await fetch("http://localhost:5000/api/search", {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                selfie: filename
+                img: item.img
             })
         })
-        const data = await res.json();
+        const data = await res.json();  
         console.log(data);
     }
     run()
@@ -87,15 +87,16 @@ const run = async () => {
 let flag = true;
 
 app.post('/create', (req, res) => {
-    const base64Data = req.body.img.replace(/^data:image\/jpeg;base64,/, "");
+    console.log("[Username]", req.body.username)
+    // const base64Data = req.body.img.replace(/^data:image\/jpeg;base64,/, "");
     let filename = Date.now().toString(36) + ".jpeg"
     // fs.mkdirSync(path.join(__dirname, "images"), { recursive: true })
     let imgpath = path.join(__dirname, "images", filename)
     // fs.writeFileSync(imgpath, base64Data, 'base64');
-    queue.enqueue(base64Data);
+    queue.enqueue({ img: req.body.img, username: req.body.username });
     // if (flag) {
-        // flag = false;
-        run();
+    // flag = false;
+    run();
     // }
     console.log(`[CREATE] Filename - ${imgpath}`)
     res.status(201).send({ message: "Image data added to the queue.", filename, length: queue.size() });
