@@ -1,23 +1,16 @@
-const os = require('os');
-const fs = require('fs');
-const path = require('path');
 const express = require('express');
-const bodyParser = require('body-parser');
 const cors = require('cors');
-const { Server } = require('socket.io')
-const http = require('http')
+const os = require('os')
+const EventEmitter = require('events');
+const uuid = require('uuid');
 
+const eventEmitter = new EventEmitter();
 const app = express();
-const server = http.createServer(app)
-const port = 3000
-const io = new Server(server, {
-    cors: { origin: '*' }
-})
-
-app.use(cors());
-
-let pause = false;
+app.use(cors()); // Enable CORS for all routes
+const PORT = process.env.PORT || 3000;
 let running = false;
+
+app.use(express.json()); // Middleware to parse JSON bodies
 
 class Queue {
     constructor() {
@@ -61,68 +54,80 @@ class Queue {
     }
 }
 
-// Increase the limit to handle larger payloads like base64 images
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-
-io.on('connection',(socket)=>{
-    console.log("[SOCKET] Socket Connected with id ", socket.id)
-})
-
-io.on('disconnect',()=>{
-    io.emit('message',"Disconnected user with socket id ",socket.id)
-})
-
-app.get('/', (req, res) => {
-    res.send('Hello From Image Recognition Service!');
-});
-
 const queue = new Queue();
 
-const run = () => {
+const getAllMatchedImages = () => {
     if (queue.isEmpty()) {
         return;
     }
     if (!running) {
         const item = queue.dequeue();
         running = true;
-        fetch("http://localhost:5000/api/search", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                img: item.img
-            })
-        }).then((res) => {
-            res.json().then(data => {
-                console.log(data)
-                running = false;
-                run()
-            })
-        })
+        // fetch("http://localhost:5000/api/search", {
+        //     method: 'POST',
+        //     headers: {
+        //         'Content-Type': 'application/json'
+        //     },
+        //     body: JSON.stringify({
+        //         img: item.img
+        //     })
+        // }).then((res) => {
+        //     res.json().then(data => {
+        //         eventEmitter.emit('search-progress', { progress: queue.size() })
+        //         eventEmitter.emit('search-complete', data)
+        //         running = false;
+        //         getAllMatchedImages()
+        //     })
+        // })
+        setTimeout(() => {
+            const data = { matches: ['image1.jpg', 'image2.jpg'] }; // Mocked response
+            eventEmitter.emit('search-progress', { progress: queue.size() })
+            eventEmitter.emit('search-complete', data)
+            console.log(queue.size())
+            console.log(data)
+            running = false;
+            getAllMatchedImages()
+        }, 7000); // Simulate network delay
     }
 }
 
-app.post('/create', (req, res) => {
-    console.log("[Username]", req.body.username)
-    let filename = Date.now().toString(36) + ".jpeg"
-    let imgpath = path.join(__dirname, "images", filename)
-    queue.enqueue({ img: req.body.img, username: req.body.username });
-    run();
-    console.log(`[CREATE] Filename - ${imgpath}`)
-    res.status(201).send({ message: "Image data added to the queue.", filename, length: queue.size() });
+app.get('/', (req, res) => {
+    res.send('Hello from Express!');
 });
 
-app.get("/get", (req, res) => {
-    res.send(queue.peek());
+app.post('/create-job', (req, res) => {
+    const jobId = uuid.v4();
+    const timestamp = Date.now();
+    // const item = {
+    //     jobId: jobId,
+    //     img: 'sample-image-data', // Placeholder for image data
+    //     stage: 'stage-1',
+    //     uid: 'user@gmail.com',
+    //     timestamp: timestamp
+    // }
+    const item = {
+        jobId: jobId,
+        img: req.body.image, // Placeholder for image data
+        stage: req.body.stage,
+        uid: req.body.uid,
+        timestamp: timestamp
+    }
+    queue.enqueue(item)
+    getAllMatchedImages();
+    res.json({ jobId, timestamp });
 })
 
-app.delete("/delete", (req, res) => {
-    res.send(queue.dequeue());
-})
+app.post('/toggle-running', (req, res) => {
+    running = req.body.run;
+    res.json({ running,  run:req.body.run });
+});
 
-app.listen(port, () => {
+app.get('/get-running', (req, res) => {
+    res.json({ running });
+});
+
+// --- Start Server ---
+app.listen(PORT, () => {
     const networkInterfaces = os.networkInterfaces();
     let localIps = [];
 
@@ -137,9 +142,9 @@ app.listen(port, () => {
     }
 
     if (localIps.length > 0) {
-        console.log(`Local IP addresses: ${localIps.join(', ')}:${port}`);
+        console.log(`[SERVER] Local IP addresses: ${localIps.join(', ')}:${PORT}`);
     } else {
-        console.log('No local IPv4 address found.');
+        console.log('[SERVER] No local IPv4 address found.');
     }
-    console.log(`Example app listening on port ${port}`);
+    console.log(`[SERVER] Example app listening on port ${PORT}`);
 });
